@@ -1,0 +1,5 @@
+{
+  "name": "@guide/backend", "private": true, "type": "module",
+  "scripts": { "start": "node src/index.mjs", "dev": "node --env-file-if-exists=../.env --watch src/index.mjs", "demo": "node --watch src/index.mjs --demo" },
+  "dependencies": { "@feathersjs/feathers": "^5.0.35", "@feathersjs/express": "^5.0.35", "@feathersjs/errors": "^5.0.35", "helmet": "^8.1.0" }
+}

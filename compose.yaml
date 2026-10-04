@@ -1,0 +1,91 @@
+name: node-red-guide
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Run npm run setup:env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  directus:
+    image: directus/directus:11.17.4
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '${CMS_BIND_ADDRESS:-127.0.0.1}:8055:8055'
+    environment:
+      KEY: ${DIRECTUS_KEY:?Set DIRECTUS_KEY}
+      SECRET: ${DIRECTUS_SECRET:?Set DIRECTUS_SECRET}
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      PUBLIC_URL: ${DIRECTUS_PUBLIC_URL:-http://localhost:8055}
+      WEBSOCKETS_ENABLED: 'false'
+      TELEMETRY: 'false'
+    volumes:
+      - directus_uploads:/directus/uploads
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8055/server/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  cms-setup:
+    image: node:22-alpine
+    profiles: [setup]
+    working_dir: /app
+    volumes:
+      - ./cms:/app/cms:ro
+      - ./content:/app/content:ro
+    environment:
+      DIRECTUS_SETUP_URL: http://directus:8055
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    depends_on:
+      directus:
+        condition: service_healthy
+    command: [node, cms/bootstrap.mjs]
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DIRECTUS_URL: http://directus:8055
+      BACKEND_PORT: 3030
+      CONTENT_MODE: directus
+    depends_on:
+      directus:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3030/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '${SITE_PORT:-80}:80'
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  postgres_data:
+  directus_uploads:
